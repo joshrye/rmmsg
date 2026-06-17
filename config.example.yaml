@@ -1,0 +1,34 @@
+token: ""
+sleepDelay: 0.5
+maxRetries: 15
+maxConnRetries: 5
+range:
+  mode: date
+  date:
+    before: "2026-06-01T00:00:00Z"
+    after: "2026-01-01T00:00:00Z"
+  msgid:
+    before: "1510806884796596345"
+    after: "1510795003327152359"
+rules:
+  # Mode: "preserve" (wipe all except preserved items) or "target" (only wipe targeted items)
+  mode: preserve
+  # Items to preserve / spare from deletion:
+  preserve:
+    guilds:
+      - id: "123456789012345678"
+        # Optional: channels to spare (if omitted or empty, preserves the entire guild)
+        channels:
+          - "987654321098765432"
+          - "555555555555555555"
+    dms:
+      - "123456789012345678"
+  # Items specifically targeted for deletion (used when mode: target):
+  target:
+    guilds:
+      - id: "222222222222222222"
+        # Optional: specific channels to wipe (if omitted or empty, wipes the entire guild)
+        channels:
+          - "333333333333333333"
+    dms:
+      - "123456789012345678"
