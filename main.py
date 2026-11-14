@@ -3,6 +3,7 @@
 import argparse
 import signal
 import sys
+from datetime import datetime
 from discord_api import DiscordAPI
 import utils
 
@@ -115,10 +116,10 @@ def process_guild(api: DiscordAPI, guild: dict, user_id: str, rules_mode: str = 
     return True
 
 
-def process_dm(api: DiscordAPI, user_id: str, rules_mode: str = "preserve", dm_rules: set = None) -> bool:
+def process_dm(api: DiscordAPI, user_id: str, rules_mode: str = "preserve", dm_rules: set = None, min_id: str = None, max_id: str = None) -> bool:
     dm_rules = dm_rules or set()
     print("\n=== Searching Direct Messages (Android Client) ===")
-    dms = api.search_dm(user_id=user_id)
+    dms = api.search_dm(user_id=user_id, min_id=min_id, max_id=max_id)
     if not dms or not dms.ok:
         if dms and dms.status_code == 401:
             print(f"Critical error 401 encountered in DM search. Aborting.")
@@ -141,7 +142,7 @@ def process_dm(api: DiscordAPI, user_id: str, rules_mode: str = "preserve", dm_r
             print(f"  No messages returned but {dms_data['tabs']['messages']['total_results']} reported, retrying ({retries}/{MAX_RETRIES})...")
             if _sleep_interruptible(5, api.shutdown):
                 return False
-            dms = api.search_dm(user_id=user_id)
+            dms = api.search_dm(user_id=user_id, min_id=min_id, max_id=max_id)
             if not dms or not dms.ok:
                 return True
             dms_data = dms.json()
@@ -178,7 +179,7 @@ def process_dm(api: DiscordAPI, user_id: str, rules_mode: str = "preserve", dm_r
             if utils.sleep_jittered(api.sleep_delay, shutdown=api.shutdown):
                 return False
         if messages:
-            dms = api.search_dm(user_id=user_id, timestamp=timestamp, max_id=messages[-1][0]["id"])
+            dms = api.search_dm(user_id=user_id, timestamp=timestamp, max_id=messages[-1][0]["id"], min_id=min_id)
             if not dms or not dms.ok:
                 return True
             dms_data = dms.json()
@@ -186,6 +187,86 @@ def process_dm(api: DiscordAPI, user_id: str, rules_mode: str = "preserve", dm_r
             return True
     return True
 
+
+
+VALID_RANGE_MODES = ("none", "date", "msgid")
+VALID_RULES_MODES = ("preserve", "target", "whitelist")
+
+
+def _parse_date(value, where: str) -> float:
+    """Normalize a date bound to a unix timestamp. Accepts ISO strings
+    (including trailing 'Z') and YAML-parsed datetime objects."""
+    if isinstance(value, datetime):
+        return value.timestamp()
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            pass
+    raise ValueError(f"{where}: not a valid ISO 8601 date: {value!r}")
+
+
+def validate_config(cfg: dict) -> None:
+    """Validate the parsed config. Raises ValueError on any problem.
+
+    Must be called before any network request or DiscordAPI construction:
+    misconfiguration must never fall back to a destructive default.
+    """
+    if not isinstance(cfg, dict):
+        raise ValueError("config: top level must be a mapping")
+
+    token = cfg.get("token")
+    if not token or not isinstance(token, str):
+        raise ValueError("token: missing or empty — required")
+
+    range_cfg = cfg.get("range")
+    if range_cfg is not None:
+        if not isinstance(range_cfg, dict):
+            raise ValueError("range: must be a mapping")
+        mode = range_cfg.get("mode", "none")
+        if mode not in VALID_RANGE_MODES:
+            raise ValueError(
+                f"range.mode: unknown value {mode!r}. Valid options: {', '.join(VALID_RANGE_MODES)}"
+            )
+
+        if mode == "date":
+            date_cfg = range_cfg.get("date")
+            if not isinstance(date_cfg, dict) or not date_cfg:
+                raise ValueError("range.mode is 'date' but no range.date bounds given (need 'after' and/or 'before')")
+            after = date_cfg.get("after")
+            before = date_cfg.get("before")
+            if after is None and before is None:
+                raise ValueError("range.mode is 'date' but no bounds given (need 'after' and/or 'before')")
+            after_ts = _parse_date(after, "range.date.after") if after is not None else None
+            before_ts = _parse_date(before, "range.date.before") if before is not None else None
+            if after_ts is not None and before_ts is not None and after_ts >= before_ts:
+                raise ValueError(f"range.date: after ({after}) must be earlier than before ({before})")
+        elif mode == "msgid":
+            msgid_cfg = range_cfg.get("msgid")
+            if not isinstance(msgid_cfg, dict) or not msgid_cfg:
+                raise ValueError("range.mode is 'msgid' but no range.msgid bounds given (need 'after' and/or 'before')")
+            after = msgid_cfg.get("after")
+            before = msgid_cfg.get("before")
+            if after is None and before is None:
+                raise ValueError("range.mode is 'msgid' but no bounds given (need 'after' and/or 'before')")
+            for name in ("after", "before"):
+                val = msgid_cfg.get(name)
+                if val is None:
+                    continue
+                try:
+                    int(str(val))
+                except ValueError:
+                    raise ValueError(f"range.msgid.{name}: not a valid message ID: {val!r}") from None
+
+    rules = cfg.get("rules")
+    if rules is not None:
+        if not isinstance(rules, dict):
+            raise ValueError("rules: must be a mapping")
+        raw_mode = str(rules.get("mode", "preserve")).lower()
+        if raw_mode not in VALID_RULES_MODES:
+            raise ValueError(
+                f"rules.mode: unknown value {raw_mode!r}. Valid options: {', '.join(VALID_RULES_MODES)}"
+            )
 
 
 def _run(api: DiscordAPI, cfg: dict) -> int:
@@ -268,8 +349,11 @@ def _run(api: DiscordAPI, cfg: dict) -> int:
 
         if rules_mode == "target" and "dms" not in rule_section:
             print("\n=== Skipping Direct Messages (not targeted) ===")
+        elif rules_mode == "target" and not dm_rules:
+            # target mode with an explicit empty dms list: target nothing, not everything
+            print("\n=== Skipping Direct Messages (target mode with empty dms list) ===")
         else:
-            if not process_dm(api, user["id"], rules_mode=rules_mode, dm_rules=dm_rules):
+            if not process_dm(api, user["id"], rules_mode=rules_mode, dm_rules=dm_rules, min_id=min_id, max_id=max_id):
                 if api.shutdown.is_set():
                     print("\nInterrupted — stopping.")
                     return 130
@@ -295,11 +379,16 @@ def _run(api: DiscordAPI, cfg: dict) -> int:
 
 
 def main(argv=None):
+    if sys.version_info < (3, 11):
+        print(f"Error: Python 3.11+ is required (you have {sys.version.split()[0]}).")
+        return 1
     args = parse_args(argv)
     try:
         import yaml
         with open(args.config) as f:
             cfg = yaml.safe_load(f) or {}
+
+        validate_config(cfg)
 
         api = DiscordAPI(
             token=cfg.get("token", ""),
@@ -326,6 +415,9 @@ def main(argv=None):
 
     except KeyError as e:
         print(f"Missing required configuration key: {e}")
+        return 1
+    except ValueError as e:
+        print(f"Invalid configuration: {e}")
         return 1
     except KeyboardInterrupt:
         return 130
