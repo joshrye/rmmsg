@@ -14,7 +14,7 @@ You choose what gets deleted: everything, only messages from a certain time peri
 
 ### 1. Install
 
-You need [Python](https://python.org) 3.10 or newer. Then install the dependencies:
+You need [Python](https://python.org) 3.11 or newer. Then install the dependencies:
 
 ```
 pip install curl_cffi ua-parser pyyaml
@@ -77,6 +77,8 @@ range:
 
 Leave `mode: none` (or remove the section) to ignore time and cover all history.
 
+You can give just one bound (`after` only or `before` only) to delete everything on one side of that point. The range applies to **both** servers and DMs.
+
 Alternatively, `mode: msgid` lets you give the boundaries as Discord message IDs instead of dates, if you happen to have them.
 
 ### Keep or target list
@@ -116,7 +118,7 @@ rules:
 A few details:
 
 - In `preserve` mode, a server listed **without** a `channels` list spares the entire server. With a `channels` list, only those channels are spared and the rest is wiped.
-- In `target` mode, if you don't include a `dms:` section at all, DMs are skipped entirely.
+- In `target` mode, if you don't include a `dms:` section at all, DMs are skipped entirely. An **empty** `dms: []` list also targets nothing — not every DM.
 - DM entries are the **DM channel ID**, not the person's user ID (they're usually the same number, but copy it from the DM itself).
 
 **Finding IDs:** in Discord, go to *Settings → Advanced* and enable **Developer Mode**. Then right-click any server, channel, or DM and choose **Copy ID**.

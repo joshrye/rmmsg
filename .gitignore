@@ -3,4 +3,4 @@ test.py
 __pycache__/
 config*.yaml
 !config.example.yaml
-config/
+config/findings.md

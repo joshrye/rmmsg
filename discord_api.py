@@ -486,7 +486,7 @@ class DiscordAPI:
             use_mobile=False,
         )
 
-    def search_dm(self, user_id: str, timestamp: str = None, max_id: str = None):
+    def search_dm(self, user_id: str, timestamp: str = None, max_id: str = None, min_id: str = None):
         cursor = {"timestamp": timestamp, "type": "timestamp"} if timestamp else None
         body = {
             "tabs": {
@@ -502,6 +502,8 @@ class DiscordAPI:
         }
         if max_id is not None:
             body["tabs"]["messages"]["max_id"] = max_id
+        if min_id is not None:
+            body["tabs"]["messages"]["min_id"] = min_id
         return self.post(
             "/users/@me/messages/search/tabs",
             body=body,
