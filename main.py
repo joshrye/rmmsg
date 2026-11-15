@@ -7,8 +7,6 @@ from datetime import datetime
 from discord_api import DiscordAPI
 import utils
 
-MAX_RETRIES = 15
-
 
 def _sleep_interruptible(seconds: float, shutdown) -> bool:
     """Sleep, aborting early when shutdown is signalled. Returns True if aborted."""
@@ -54,6 +52,7 @@ def process_guild(api: DiscordAPI, guild: dict, user_id: str, rules_mode: str = 
             channel_query = "&" + "&".join(f"channel_id={i}" for i in target_ids)
     skipped = 0
     retries = 0
+    max_retries = api.max_retries
 
     if api.shutdown.is_set():
         return False
@@ -64,7 +63,10 @@ def process_guild(api: DiscordAPI, guild: dict, user_id: str, rules_mode: str = 
         print("  No messages found or search failed")
         return True
 
-    while search and search_data.get("total_results", 0) - skipped > 0:
+    # Pagination walks pages via max_id=<last message on page>, so each page's
+    # total_results counts only messages at or before that cursor. Track
+    # failures per page; never subtract a running total from a fresh page.
+    while search and search_data.get("total_results", 0) > 0:
         if api.shutdown.is_set():
             return False
         for thread in search_data.get("threads", []):
@@ -74,17 +76,18 @@ def process_guild(api: DiscordAPI, guild: dict, user_id: str, rules_mode: str = 
         messages = search_data.get("messages", [])
         if not messages:
             retries += 1
-            if retries >= MAX_RETRIES:
-                print(f"  No messages returned after {MAX_RETRIES} retries, moving on")
+            if retries >= max_retries:
+                print(f"  No messages returned after {max_retries} retries, moving on")
                 break
-            print(f"  No messages in response but {search_data.get('total_results', 0)} reported, retrying ({retries}/{MAX_RETRIES})...")
+            print(f"  No messages in response but {search_data.get('total_results', 0)} reported, retrying ({retries}/{max_retries})...")
             if _sleep_interruptible(5, api.shutdown):
                 return False
-            search = api.search_guild(guild_id=guild_id, user_id=user_id, channel_query=channel_query, offset=skipped, min_id=min_id, max_id=max_id)
+            search = api.search_guild(guild_id=guild_id, user_id=user_id, channel_query=channel_query, offset=0, min_id=min_id, max_id=max_id)
             search_data = search.json() if search and search.ok else {}
             continue
 
         retries = 0
+        page_skipped = 0
 
         for content in messages:
             if api.shutdown.is_set():
@@ -100,6 +103,7 @@ def process_guild(api: DiscordAPI, guild: dict, user_id: str, rules_mode: str = 
                 if res and res.status_code == 401:
                     print(f"  Critical error 401 encountered. Aborting to protect account.")
                     return False
+                page_skipped += 1
                 skipped += 1
                 print("  Skipping message due to error")
             if utils.sleep_jittered(api.sleep_delay, shutdown=api.shutdown):
@@ -109,11 +113,16 @@ def process_guild(api: DiscordAPI, guild: dict, user_id: str, rules_mode: str = 
             search = api.search_guild(guild_id=guild_id, user_id=user_id, channel_query=channel_query, offset=0, min_id=min_id, max_id=lastid)
             if not search or not search.ok:
                 print("  Search failed, stopping")
-                return True
+                return skipped == 0
             search_data = search.json()
+            # If every message on the page failed, the next page (max_id=lastid)
+            # still starts at the same failed message; avoid an infinite loop.
+            if page_skipped and search_data.get("total_results", 0) == page_skipped:
+                print(f"  {page_skipped} message(s) could not be deleted; moving on")
+                break
         else:
-            return True
-    return True
+            return skipped == 0
+    return skipped == 0
 
 
 def process_dm(api: DiscordAPI, user_id: str, rules_mode: str = "preserve", dm_rules: set = None, min_id: str = None, max_id: str = None) -> bool:
@@ -128,6 +137,7 @@ def process_dm(api: DiscordAPI, user_id: str, rules_mode: str = "preserve", dm_r
 
     dms_data = dms.json()
     retries = 0
+    max_retries = api.max_retries
 
     while dms and dms_data.get("tabs", {}).get("messages", {}).get("total_results", 0) > 0:
         if api.shutdown.is_set():
@@ -136,10 +146,10 @@ def process_dm(api: DiscordAPI, user_id: str, rules_mode: str = "preserve", dm_r
 
         if not messages:
             retries += 1
-            if retries >= MAX_RETRIES:
-                print(f"  No messages returned after {MAX_RETRIES} retries, moving on")
+            if retries >= max_retries:
+                print(f"  No messages returned after {max_retries} retries, moving on")
                 break
-            print(f"  No messages returned but {dms_data['tabs']['messages']['total_results']} reported, retrying ({retries}/{MAX_RETRIES})...")
+            print(f"  No messages returned but {dms_data['tabs']['messages']['total_results']} reported, retrying ({retries}/{max_retries})...")
             if _sleep_interruptible(5, api.shutdown):
                 return False
             dms = api.search_dm(user_id=user_id, min_id=min_id, max_id=max_id)
