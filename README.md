@@ -140,15 +140,6 @@ Everything in `config.yaml`:
 
 ---
 
-## Good to know
-
-- **The tool only deletes your own messages.** Other people's messages are never touched.
-- **It runs at a polite pace.** Deletions are spaced out and Discord's rate limits are respected automatically — if Discord says "slow down," the tool waits and resumes.
-- **If something fails to delete** (e.g. a message is in a server you can no longer view), it's skipped and the run continues.
-- **If your login becomes invalid** (error `401`), the tool stops immediately rather than hammering a dead session.
-- **Recently "deleted for everyone" messages** can still show up in search results for a while; the tool skips any it can't delete and moves on.
-- **Archived threads** containing your messages are temporarily unarchived so the messages inside can be deleted.
-
 ## License
 
 ISC — see [LICENSE](LICENSE).
