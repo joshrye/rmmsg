@@ -1,0 +1,44 @@
+# rmmsg configuration — copy to config.toml and fill in your token.
+
+token = ""            # Discord auth token. Required.
+sleepDelay = 0.5      # Seconds between deletions.
+maxRetries = 15
+maxConnRetries = 5
+
+# mode: "none" (all history), "date", or "msgid". One bound alone is fine.
+[range]
+mode = "date"
+
+[range.date]
+after = "2026-01-01T00:00:00Z"
+before = "2026-06-01T00:00:00Z"
+
+[range.msgid]
+after = "1174109840998565773"
+before = "1174124940495617528"
+
+# mode: "preserve" = delete everything EXCEPT the listed items.
+#       "target"   = delete ONLY the listed items.
+[rules]
+mode = "preserve"
+
+[rules.preserve]
+dms = ["123456789012345678"]
+
+# One block per guild. No "channels" key = whole guild; with "channels" = only those.
+[[rules.preserve.guilds]]
+id = "123456789012345678"
+
+[[rules.preserve.guilds]]
+id = "222222222222222222"
+channels = ["987654321098765432", "555555555555555555"]
+
+[rules.target]
+dms = ["123456789012345678"]
+
+[[rules.target.guilds]]
+id = "222222222222222222"
+
+[[rules.target.guilds]]
+id = "333333333333333333"
+channels = ["444444444444444444"]

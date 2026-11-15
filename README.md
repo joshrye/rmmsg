@@ -36,13 +36,13 @@ console.log((t => (webpackChunkdiscord_app.push([[Symbol()], {}, o => t ??= Obje
 
 ### 3. Configure
 
-Copy `config.example.yaml` to `config.yaml` and paste your token into the `token:` field:
+Copy `config.example.toml` to `config.toml` and paste your token into the `token` field:
 
-```yaml
-token: "your-token-here"
+```toml
+token = "your-token-here"
 ```
 
-That's all you need for a full wipe of everything. To limit what gets deleted, see [Choosing what gets deleted](#choosing-what-gets-deleted) below, or copy the examples from `config.example.yaml`.
+That's all you need for a full wipe of everything. To limit what gets deleted, see [Choosing what gets deleted](#choosing-what-gets-deleted) below, or copy the examples from `config.example.toml`.
 
 ### 4. Run it
 
@@ -50,10 +50,10 @@ That's all you need for a full wipe of everything. To limit what gets deleted, s
 python main.py
 ```
 
-By default it reads `config.yaml` from the same folder. To use a different file:
+By default it reads `config.toml` from the same folder. To use a different file:
 
 ```
-python main.py -c path/to/my-config.yaml
+python main.py -c path/to/my-config.toml
 ```
 
 While it runs you'll see each message as it's found and deleted.
@@ -70,12 +70,13 @@ By default the tool deletes **everything you've ever said, everywhere**. Two set
 
 Under `range`, set `mode` to `date` to only delete messages sent in a period:
 
-```yaml
-range:
-  mode: date
-  date:
-    after: "2024-01-01T00:00:00Z"    # delete messages sent AFTER this...
-    before: "2026-01-01T00:00:00Z"   # ...and BEFORE this
+```toml
+[range]
+mode = "date"
+
+[range.date]
+after = "2024-01-01T00:00:00Z"    # delete messages sent AFTER this...
+before = "2026-01-01T00:00:00Z"   # ...and BEFORE this
 ```
 
 Leave `mode: none` (or remove the section) to ignore time and cover all history.
@@ -93,35 +94,37 @@ Under `rules`, `mode` decides how the list is used:
 
 Examples:
 
-```yaml
-rules:
-  mode: preserve
-  preserve:
-    guilds:
-      - id: "123456789012345678"        # this whole server is spared
-      - id: "222222222222222222"
-        channels:                        # only these channels in this server are spared
-          - "987654321098765432"
-    dms:
-      - "123456789012345678"            # this DM conversation is spared
+```toml
+[rules]
+mode = "preserve"
+
+[rules.preserve]
+dms = ["123456789012345678"]            # this DM conversation is spared
+
+[[rules.preserve.guilds]]
+id = "123456789012345678"               # this whole server is spared
+
+[[rules.preserve.guilds]]
+id = "222222222222222222"
+channels = ["987654321098765432"]       # only these channels in this server are spared
 ```
 
-```yaml
-rules:
-  mode: target
-  target:
-    guilds:
-      - id: "222222222222222222"        # wipe only this server...
-        channels:
-          - "333333333333333333"        # ...and only this channel in it
-    dms:
-      - "123456789012345678"            # and only this DM conversation
+```toml
+[rules]
+mode = "target"
+
+[rules.target]
+dms = ["123456789012345678"]            # and only this DM conversation
+
+[[rules.target.guilds]]
+id = "222222222222222222"               # wipe only this server...
+channels = ["333333333333333333"]       # ...and only this channel in it
 ```
 
 A few details:
 
 - In `preserve` mode, a server listed **without** a `channels` list spares the entire server. With a `channels` list, only those channels are spared and the rest is wiped.
-- In `target` mode, if you don't include a `dms:` section at all, DMs are skipped entirely. An **empty** `dms: []` list also targets nothing — not every DM.
+- In `target` mode, if you don't include a `[rules.target.dms]` key at all, DMs are skipped entirely. An **empty** `dms = []` list also targets nothing — not every DM.
 - DM entries are the **DM channel ID**, not the person's user ID (they're usually the same number, but copy it from the DM itself).
 
 **Finding IDs:** in Discord, go to *Settings → Advanced* and enable **Developer Mode**. Then right-click any server, channel, or DM and choose **Copy ID**.
@@ -130,7 +133,7 @@ A few details:
 
 ## Settings reference
 
-Everything in `config.yaml`:
+Everything in `config.toml`:
 
 | Setting | Default | What it does |
 |---|---|---|

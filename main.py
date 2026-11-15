@@ -12,8 +12,8 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="Wipe Discord messages")
     parser.add_argument(
         "-c", "--config",
-        default="config.yaml",
-        help="Path to the config file (default: config.yaml)",
+        default="config.toml",
+        help="Path to the config file (default: config.toml)",
     )
     return parser.parse_args(argv)
 
@@ -196,7 +196,7 @@ VALID_RULES_MODES = ("preserve", "target", "whitelist")
 
 def _parse_date(value, where: str) -> float:
     """Normalize a date bound to a unix timestamp. Accepts ISO strings
-    (including trailing 'Z') and YAML-parsed datetime objects."""
+    (including trailing 'Z') and TOML-parsed datetime objects."""
     if isinstance(value, datetime):
         return value.timestamp()
     if isinstance(value, str):
@@ -303,9 +303,9 @@ def _run(api: DiscordAPI, cfg: dict) -> int:
             date_range = range_cfg.get("date", {})
             start_date = date_range.get("after", None)
             end_date = date_range.get("before", None)
-            if start_date and end_date:
-                start_unix = utils.iso_to_unix(start_date)
-                end_unix = utils.iso_to_unix(end_date)
+            if start_date is not None and end_date is not None:
+                start_unix = int(_parse_date(start_date, "range.date.after"))
+                end_unix = int(_parse_date(end_date, "range.date.before"))
                 min_id = str(utils.to_snowflake(start_unix))
                 max_id = str(utils.to_snowflake(end_unix))
                 print(f"Searching for messages between {start_date} and {end_date}")
@@ -388,9 +388,9 @@ def main(argv=None):
         return 1
     args = parse_args(argv)
     try:
-        import yaml
-        with open(args.config) as f:
-            cfg = yaml.safe_load(f) or {}
+        import tomllib
+        with open(args.config, "rb") as f:
+            cfg = tomllib.load(f) or {}
 
         validate_config(cfg)
 

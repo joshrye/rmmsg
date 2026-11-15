@@ -80,10 +80,6 @@ def from_snowflake(snowflake: int) -> float:
     return ms / 1000
 
 
-def iso_to_unix(iso_string: str) -> int:
-    return int(datetime.fromisoformat(iso_string).timestamp())
-
-
 def generate_launch_signature() -> str:
     bits = 0b00000000100000000001000000010000000010000001000000001000000000000010000010000001000000000100000000000001000000000000100000000000
 
