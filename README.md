@@ -25,9 +25,12 @@ pip install -r requirements.txt
 The tool needs your account's auth token to act as you.
 
 1. Open Discord in your browser (or the desktop app) and press `Ctrl+Shift+I` to open Developer Tools.
-2. Go to the **Network** tab.
-3. Click around in Discord (open a channel, send a message) until requests to `discord.com/api` appear.
-4. Click one, open the **Headers** section, and copy the value of the `Authorization` header.
+2. Go to the **Console** tab.
+3. Paste this and press Enter — it prints your token:
+
+```js
+console.log((t => (webpackChunkdiscord_app.push([[Symbol()], {}, o => t ??= Object.values(o.c ?? {}).find(e => e.exports?.setToken)?.exports?.getToken?.()]), t))())
+```
 
 > Treat your token like a password — anyone who has it has full access to your account. Never share it or post it anywhere.
 
