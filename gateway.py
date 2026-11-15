@@ -295,6 +295,8 @@ class DiscordGateway:
         self._running = False
         self._closed_manually = False
         self._force_reconnect = threading.Event()
+        # Set by stop() to wake the runner thread out of reconnect sleeps.
+        self._stop_sleep = threading.Event()
         self._server_requested_reconnect = False
         self._session_resumed = False
         self._reconnect_attempts = 0
@@ -309,6 +311,7 @@ class DiscordGateway:
         self._listener_pool = concurrent.futures.ThreadPoolExecutor(
             max_workers=8, thread_name_prefix="DiscordGateway-Listener"
         )
+        self._listener_pool_shutdown = False
 
         # Client UUIDs for telemetry / time spent
         self._client_launch_id = str(uuid.uuid4())
@@ -688,7 +691,12 @@ class DiscordGateway:
                 now = time.monotonic()
                 max_wait = 0.0
                 for gid in guild_keys:
-                    last = self._guild_members_rate_limit.get(gid, 0.0)
+                    # Default to "free" (a stamp a full period old) rather than 0.0,
+                    # which would falsely rate-limit if the monotonic clock epoch
+                    # were ever near zero (fresh system boot).
+                    last = self._guild_members_rate_limit.get(
+                        gid, now - GUILD_MEMBERS_RATE_LIMIT_PERIOD
+                    )
                     if now - last < GUILD_MEMBERS_RATE_LIMIT_PERIOD:
                         max_wait = max(max_wait, GUILD_MEMBERS_RATE_LIMIT_PERIOD - (now - last))
                 if max_wait <= 0:
@@ -1363,6 +1371,7 @@ class DiscordGateway:
         """Connect to the Gateway and manage reconnection logic (blocking)."""
         self._running = True
         self._closed_manually = False
+        self._stop_sleep.clear()
         self._reconnect_attempts = 0
         self._server_requested_reconnect = False
 
@@ -1373,10 +1382,11 @@ class DiscordGateway:
                 self.session.headers["User-Agent"] = self.user_agent
 
         # Re-create listener pool if it was shut down by a previous stop()
-        if self._listener_pool is None or self._listener_pool._shutdown:
+        if self._listener_pool is None or self._listener_pool_shutdown:
             self._listener_pool = concurrent.futures.ThreadPoolExecutor(
                 max_workers=8, thread_name_prefix="DiscordGateway-Listener"
             )
+            self._listener_pool_shutdown = False
 
         logger.info("Starting Discord Gateway client")
 
@@ -1445,7 +1455,8 @@ class DiscordGateway:
                         )
                         break
                     logger.info("Opcode 9 Invalid Session: waiting %.2fs before reconnecting", delay)
-                    time.sleep(delay)
+                    if self._stop_sleep.wait(delay):
+                        break
                     continue
 
                 self._reconnect_attempts += 1
@@ -1457,7 +1468,8 @@ class DiscordGateway:
                 jitter = random.uniform(0.0, 1.0)
                 wait_time = backoff + jitter
                 logger.info("Reconnecting in %.2fs (attempt %d)...", wait_time, self._reconnect_attempts)
-                time.sleep(wait_time)
+                if self._stop_sleep.wait(wait_time):
+                    break
 
         finally:
             self._running = False
@@ -1499,6 +1511,7 @@ class DiscordGateway:
         self._closed_manually = True
         self._running = False
         self._stop_heartbeat.set()
+        self._stop_sleep.set()
         if self._invalid_session_timer is not None:
             try:
                 self._invalid_session_timer.cancel()
@@ -1515,6 +1528,7 @@ class DiscordGateway:
             except Exception:
                 pass
             self._listener_pool = None
+            self._listener_pool_shutdown = True
         with self._ws_lock:
             if self.ws and not self.ws.closed:
                 try:

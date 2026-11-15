@@ -344,12 +344,6 @@ class DiscordAPI:
             "X-Discord-Timezone": "UTC",
         }
 
-        # Aliases for backward compatibility
-        self.session = self.desktop_session
-        self.dm_search_session = self.mobile_session
-        self.headers = self.desktop_headers
-        self.dm_search_headers = self.mobile_headers
-
         self._desktop_heartbeat_rotated_at = time.monotonic()
         self._mobile_heartbeat_rotated_at = time.monotonic()
         # Cooperative shutdown flag: set by the SIGINT handler in main.py.
@@ -370,14 +364,12 @@ class DiscordAPI:
             self.desktop_headers["X-Super-Properties"] = _rotate_heartbeat_session_id(
                 self.desktop_headers["X-Super-Properties"]
             )
-            self.headers = self.desktop_headers
             self._desktop_heartbeat_rotated_at = now
 
         if now - self._mobile_heartbeat_rotated_at >= HEARTBEAT_ROTATION_SECONDS:
             self.mobile_headers["X-Super-Properties"] = _rotate_heartbeat_session_id(
                 self.mobile_headers["X-Super-Properties"]
             )
-            self.dm_search_headers = self.mobile_headers
             self._mobile_heartbeat_rotated_at = now
 
     def get_desktop_heartbeat_session_id(self) -> str | None:
@@ -396,7 +388,6 @@ class DiscordAPI:
         self.desktop_headers["X-Super-Properties"] = _rotate_heartbeat_session_id(
             self.desktop_headers["X-Super-Properties"]
         )
-        self.headers = self.desktop_headers
         self._desktop_heartbeat_rotated_at = time.monotonic()
         return self.get_desktop_heartbeat_session_id()
 
