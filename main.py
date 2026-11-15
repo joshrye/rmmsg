@@ -93,7 +93,7 @@ def process_guild(api: DiscordAPI, guild: dict, user_id: str, rules_mode: str = 
             if api.shutdown.is_set():
                 return False
             if res and res.ok:
-                print(f"  Deleted: {msg['id']}")
+                print(f"  Deleted: {msg['content'][:50] or '[embed]'}")
             else:
                 if res and res.status_code == 401:
                     print(f"  Critical error 401 encountered. Aborting to protect account.")
@@ -172,7 +172,7 @@ def process_dm(api: DiscordAPI, user_id: str, rules_mode: str = "preserve", dm_r
             if api.shutdown.is_set():
                 return False
             if res and res.ok:
-                print(f"  Deleted DM message: {msg['id']}")
+                print(f"  Deleted DM message: {msg['content'][:50] or '[embed]'}")
             else:
                 if res and res.status_code == 401:
                     print(f"  Critical error 401 encountered in DM delete. Aborting.")
