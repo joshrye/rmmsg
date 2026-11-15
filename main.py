@@ -83,6 +83,7 @@ def process_guild(api: DiscordAPI, guild: dict, user_id: str, rules_mode: str = 
 
         retries = 0
         page_skipped = 0
+        print(f"  {search_data.get('total_results', 0)} message(s) left")
 
         for content in messages:
             if api.shutdown.is_set():
@@ -153,6 +154,7 @@ def process_dm(api: DiscordAPI, user_id: str, rules_mode: str = "preserve", dm_r
 
         retries = 0
         timestamp = None
+        print(f"  {dms_data['tabs']['messages']['total_results']} message(s) left")
 
         for message in messages:
             if api.shutdown.is_set():
