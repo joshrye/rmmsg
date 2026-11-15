@@ -1,6 +1,5 @@
-config.*.yaml
 test.py
 __pycache__/
-config*.yaml
+config*
 !config.example.yaml
-config/findings.md
+findings.md
