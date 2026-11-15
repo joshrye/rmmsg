@@ -287,6 +287,9 @@ def _run(api: DiscordAPI, cfg: dict) -> int:
 
     gw.start()
     if not gw.ready.wait(timeout=30):
+        if not gw._runner_thread.is_alive():
+            print("Error: Gateway runner thread exited before becoming ready")
+            return 1
         print("Warning: Gateway did not become ready in time, proceeding without it")
 
     try:

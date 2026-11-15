@@ -482,12 +482,15 @@ class DiscordGateway:
     def send_heartbeat(self, seq: int | None = None):
         """Send Opcode 1 Heartbeat with last received sequence number.
 
-        Bypasses the 120/60s rate limiter to prevent heartbeat starvation.
+        Counts toward the 120 events/60s limiter: Discord's Gateway counts
+        heartbeats against it, and bypassing it risks a 4008 close under load.
+        The limiter sleeps rather than dropping, so heartbeats can starve
+        non-essential traffic but are themselves never silently withheld.
         """
         s = self.sequence if seq is None else seq
         logger.debug("Sending Heartbeat (op: 1, seq: %s)", s)
         self.last_heartbeat_sent = time.monotonic()
-        return self.send_payload(GatewayOpcode.HEARTBEAT, s, _bypass_rate_limit=True)
+        return self.send_payload(GatewayOpcode.HEARTBEAT, s)
 
     def send_qos_heartbeat(
         self,
@@ -497,7 +500,7 @@ class DiscordGateway:
     ):
         """Send Opcode 40 QoS Heartbeat.
 
-        Bypasses the 120/60s rate limiter to prevent heartbeat starvation.
+        Counts toward the 120 events/60s limiter (see send_heartbeat).
         """
         s = self.sequence if seq is None else seq
         qos_data = {
@@ -507,7 +510,7 @@ class DiscordGateway:
         }
         logger.debug("Sending QoS Heartbeat (op: 40, seq: %s)", s)
         self.last_heartbeat_sent = time.monotonic()
-        return self.send_payload(GatewayOpcode.QOS_HEARTBEAT, {"seq": s, "qos": qos_data}, _bypass_rate_limit=True)
+        return self.send_payload(GatewayOpcode.QOS_HEARTBEAT, {"seq": s, "qos": qos_data})
 
     def rotate_analytics_session(self):
         """Regenerate analytics session UUID every 30 minutes per spec."""
@@ -850,21 +853,25 @@ class DiscordGateway:
     # -------------------------------------------------------------------------
     def _start_heartbeat(self, interval_ms: float):
         """Start the background heartbeat thread."""
-        self._stop_heartbeat.set()
+        # Signal and reap the previous loop. Each loop owns its stop Event, so a
+        # slow previous thread can never be resurrected by clearing a shared flag.
         if self._heartbeat_thread and self._heartbeat_thread.is_alive():
+            self._stop_heartbeat.set()
             self._heartbeat_thread.join(timeout=1.0)
 
-        self._stop_heartbeat.clear()
+        stop_event = threading.Event()
+        self._stop_heartbeat = stop_event
         self.heartbeat_interval = interval_ms / 1000.0
         self.heartbeat_acked = True
         self._heartbeat_thread = threading.Thread(
             target=self._heartbeat_loop,
+            args=(stop_event,),
             daemon=True,
             name="DiscordGateway-Heartbeat",
         )
         self._heartbeat_thread.start()
 
-    def _heartbeat_loop(self):
+    def _heartbeat_loop(self, stop_event: threading.Event):
         """Continually send heartbeats every heartbeat_interval seconds."""
         interval = self.heartbeat_interval or 41.25
 
@@ -872,10 +879,10 @@ class DiscordGateway:
         # "The first heartbeat may be offset by a value between 0 and heartbeat_interval"
         jitter = interval * random.uniform(0.0, 1.0)
         logger.debug("Initial heartbeat scheduled in %.2fs (jitter)", jitter)
-        if self._stop_heartbeat.wait(timeout=jitter):
+        if stop_event.wait(timeout=jitter):
             return
 
-        while not self._stop_heartbeat.is_set():
+        while not stop_event.is_set():
             if not self.heartbeat_acked:
                 logger.warning(
                     "Heartbeat ACK not received between intervals; connection zombied. Forcing reconnect."
@@ -903,7 +910,7 @@ class DiscordGateway:
             # Limit resets to prevent server-spammed Op 1 from suppressing ACK check
             resets = 0
             max_resets = 3
-            while not self._stop_heartbeat.is_set():
+            while not stop_event.is_set():
                 if self._heartbeat_reset.wait(timeout=interval):
                     # Server sent Opcode 1, which already dispatched a heartbeat.
                     # Clear flag and reset interval timer to wait full interval before checking ACK.
@@ -956,7 +963,11 @@ class DiscordGateway:
             self.sequence = s
 
         if op == GatewayOpcode.DISPATCH:
-            self._handle_dispatch(t, d)
+            # A raising listener/state handler must not kill the receive loop.
+            try:
+                self._handle_dispatch(t, d)
+            except Exception:
+                logger.exception("Unhandled error dispatching event %r", t)
         elif op == GatewayOpcode.HELLO:
             interval = d.get("heartbeat_interval", 41250)
             logger.info("Received Opcode 10 Hello: heartbeat_interval=%d ms", interval)
@@ -1321,8 +1332,9 @@ class DiscordGateway:
                     pass
                 self._invalid_session_timer = None
             if sock_obj is not None:
+                # socket.fromfd() duplicated the fd; close it (detach() would leak it).
                 try:
-                    sock_obj.detach()
+                    sock_obj.close()
                 except Exception:
                     pass
             self._stop_heartbeat.set()
@@ -1425,6 +1437,13 @@ class DiscordGateway:
                 if self._invalid_session_delay is not None:
                     delay = self._invalid_session_delay
                     self._invalid_session_delay = None
+                    self._reconnect_attempts += 1
+                    if self.max_reconnect_attempts > 0 and self._reconnect_attempts > self.max_reconnect_attempts:
+                        logger.error(
+                            "Maximum reconnection attempts (%d) reached. Aborting.",
+                            self.max_reconnect_attempts,
+                        )
+                        break
                     logger.info("Opcode 9 Invalid Session: waiting %.2fs before reconnecting", delay)
                     time.sleep(delay)
                     continue
