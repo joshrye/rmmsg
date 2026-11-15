@@ -99,6 +99,45 @@ def _fetch_android_version(session: requests.Session) -> tuple[str, str] | None:
 
     return match.groups()
 
+# Chromium's GREASE brand/version generation, a pure function of the major
+# version (seed): components/embedder_support/user_agent_utils.cc.
+_GREASEY_CHARS = (" ", "(", ":", "-", ".", "/", ")", ";", "=", "?", "_")
+_GREASED_VERSIONS = ("8", "99", "24")
+_BRAND_PERMUTATIONS = (
+    (0, 1, 2), (0, 2, 1), (1, 0, 2), (1, 2, 0), (2, 0, 1), (2, 1, 0),
+)
+
+
+def _greased_brand_version(seed: int) -> tuple[str, str]:
+    brand = (
+        f"Not{_GREASEY_CHARS[seed % len(_GREASEY_CHARS)]}A"
+        f"{_GREASEY_CHARS[(seed + 1) % len(_GREASEY_CHARS)]}Brand"
+    )
+    version = _GREASED_VERSIONS[seed % len(_GREASED_VERSIONS)]
+    return brand, version
+
+
+def build_sec_ch_ua(chrome_major: str) -> str:
+    """Build Sec-Ch-Ua exactly as Chromium does for the given major version."""
+    try:
+        seed = int(chrome_major)
+    except (TypeError, ValueError):
+        seed = 0
+    grease_brand, grease_version = _greased_brand_version(seed)
+    # List is built [grease, Chromium, brand] then shuffled: Chromium's
+    # ShuffleBrandList assigns shuffled[order[i]] = list[i].
+    brands = [
+        (grease_brand, grease_version),
+        ("Chromium", chrome_major),
+        ("Google Chrome", chrome_major),
+    ]
+    order = _BRAND_PERMUTATIONS[seed % len(_BRAND_PERMUTATIONS)]
+    shuffled: list[tuple[str, str]] = [None] * len(brands)  # type: ignore[list-item]
+    for i, pos in enumerate(order):
+        shuffled[pos] = brands[i]
+    return ", ".join(f'"{name}";v="{ver}"' for name, ver in shuffled)
+
+
 def _fetch_build_number(session: requests.Session) -> int | None:
     try:
         r = session.get("https://discord.com/login", timeout=10)
@@ -287,7 +326,7 @@ class DiscordAPI:
             "X-Super-Properties": chrome_x_super,
             "Accept": "*/*",
             "Accept-Language": "en-US,en;q=0.9",
-            "Sec-Ch-Ua": f'"Google Chrome";v="{chrome_major}", "Chromium";v="{chrome_major}", "Not:A-Brand";v="24"',
+            "Sec-Ch-Ua": build_sec_ch_ua(chrome_major),
             "Sec-Ch-Ua-Mobile": "?0",
             "Sec-Ch-Ua-Platform": f'"{os_platform}"',
             "Sec-Fetch-Dest": "empty",
