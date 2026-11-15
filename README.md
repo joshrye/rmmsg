@@ -17,7 +17,7 @@ You choose what gets deleted: everything, only messages from a certain time peri
 You need [Python](https://python.org) 3.11 or newer. Then install the dependencies:
 
 ```
-pip install curl_cffi ua-parser pyyaml
+pip install -r requirements.txt
 ```
 
 ### 2. Get your Discord token
