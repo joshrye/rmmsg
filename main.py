@@ -116,7 +116,9 @@ def process_guild(api: DiscordAPI, guild: dict, user_id: str, rules_mode: str = 
             if page_skipped and search_data.get("total_results", 0) == page_skipped:
                 print(f"  {page_skipped} message(s) could not be deleted; moving on")
                 break
-    return skipped == 0
+    if skipped:
+        print(f"  {skipped} message(s) skipped due to errors; continuing")
+    return True
 
 
 def process_dm(api: DiscordAPI, user_id: str, rules_mode: str = "preserve", dm_rules: set = None, min_id: str = None, max_id: str = None) -> bool:
